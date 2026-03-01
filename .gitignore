@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.venv313/
+.env
+data/chroma/
+logs/
+*.egg-info/
+agent.md
+实施计划.md
+进度.md
+RUNBOOK.md
+runbook.md
