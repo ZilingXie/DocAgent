@@ -1,4 +1,4 @@
-__pycache__/
+﻿__pycache__/
 *.pyc
 .pytest_cache/
 .venv/
@@ -12,3 +12,4 @@ agent.md
 进度.md
 RUNBOOK.md
 runbook.md
+项目技术原理说明.md
