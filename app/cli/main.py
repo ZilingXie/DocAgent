@@ -54,7 +54,13 @@ def config() -> None:
     table.add_column("Key", style="cyan")
     table.add_column("Value", style="white")
 
-    api_key_set = "yes" if settings.openai_api_key else "no"
+    api_key_set = "yes" if get_openai_api_key_value() else "no"
+    web_admin_token_set = (
+        "yes"
+        if settings.web_admin_token
+        and settings.web_admin_token.get_secret_value().strip()
+        else "no"
+    )
     table.add_row("OPENAI_API_KEY", api_key_set)
     table.add_row("OPENAI_CHAT_MODEL", settings.openai_chat_model)
     table.add_row("OPENAI_EMBEDDING_MODEL", settings.openai_embedding_model)
@@ -70,6 +76,10 @@ def config() -> None:
     table.add_row("RETRY_BASE_SECONDS", str(settings.retry_base_seconds))
     table.add_row("LOG_LEVEL", settings.log_level)
     table.add_row("LOG_FILE", str(settings.log_file))
+    table.add_row("WEB_HOST", settings.web_host)
+    table.add_row("WEB_PORT", str(settings.web_port))
+    table.add_row("WEB_SESSION_WINDOW", str(settings.web_session_window))
+    table.add_row("WEB_ADMIN_TOKEN", web_admin_token_set)
     console.print(table)
 
 
@@ -90,7 +100,7 @@ def ingest(
 
     settings = get_settings()
     target_dir = _resolve_docs_dir(docs_dir or settings.docs_dir)
-    if not settings.openai_api_key:
+    if not get_openai_api_key_value():
         console.print("[red]OPENAI_API_KEY is not set.[/red]")
         raise typer.Exit(code=1)
 

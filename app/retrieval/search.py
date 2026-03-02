@@ -100,6 +100,11 @@ def retrieve(
                         h1=str(doc.metadata.get("h1", "")),
                         h2=str(doc.metadata.get("h2", "")),
                         h3=str(doc.metadata.get("h3", "")),
+                        source_url=str(
+                            doc.metadata.get("source_url", "")
+                            or doc.metadata.get("exported_from", "")
+                        ).strip()
+                        or None,
                     )
                 )
 

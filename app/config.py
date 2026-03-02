@@ -23,7 +23,7 @@ class Settings(BaseSettings):
         default="text-embedding-3-large", alias="OPENAI_EMBEDDING_MODEL"
     )
 
-    docs_dir: Path = Field(default=Path("docs"), alias="DOCS_DIR")
+    docs_dir: Path = Field(default=Path("doc"), alias="DOCS_DIR")
     chroma_persist_dir: Path = Field(
         default=Path("data/chroma/agora_docs_v1"), alias="CHROMA_PERSIST_DIR"
     )
@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     retry_base_seconds: float = Field(default=0.8, alias="RETRY_BASE_SECONDS")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     log_file: Path = Field(default=Path("logs/doc_agent.log"), alias="LOG_FILE")
+    web_host: str = Field(default="0.0.0.0", alias="WEB_HOST")
+    web_port: int = Field(default=8000, alias="WEB_PORT")
+    web_session_window: int = Field(default=20, alias="WEB_SESSION_WINDOW")
+    web_admin_token: Optional[SecretStr] = Field(default=None, alias="WEB_ADMIN_TOKEN")
 
 
 @lru_cache(maxsize=1)
@@ -49,4 +53,5 @@ def get_openai_api_key_value() -> str | None:
     settings = get_settings()
     if not settings.openai_api_key:
         return None
-    return settings.openai_api_key.get_secret_value()
+    value = settings.openai_api_key.get_secret_value().strip()
+    return value or None

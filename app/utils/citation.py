@@ -20,7 +20,7 @@ def citations_from_chunk_ids(
                 source_path=chunk.source_path,
                 heading=heading_from_chunk(chunk),
                 chunk_id=chunk.chunk_id,
+                source_url=chunk.source_url,
             )
         )
     return citations
-
