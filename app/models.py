@@ -11,6 +11,7 @@ class RetrievedChunk:
     h1: Optional[str] = None
     h2: Optional[str] = None
     h3: Optional[str] = None
+    source_url: Optional[str] = None
 
 
 @dataclass
@@ -18,6 +19,7 @@ class Citation:
     source_path: str
     heading: str
     chunk_id: str
+    source_url: Optional[str] = None
 
 
 @dataclass

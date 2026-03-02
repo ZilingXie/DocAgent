@@ -150,11 +150,11 @@ def answer(query: str, platform: str | None = None, product: str | None = None) 
     """
     started = time.perf_counter()
     settings = get_settings()
-    if not settings.openai_api_key:
+    api_key = get_openai_api_key_value()
+    if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set.")
 
     variants = generate_query_variants(query=query, n=settings.query_variants)
-    api_key = get_openai_api_key_value()
     retrieved = retrieve(
         queries=variants,
         top_k=settings.retrieval_top_k,

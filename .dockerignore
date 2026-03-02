@@ -1,0 +1,14 @@
+.git
+.gitignore
+.venv313
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+data
+logs
+doc_agent.egg-info
+tests
+eval
+.env

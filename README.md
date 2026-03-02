@@ -1,6 +1,11 @@
 # Doc Agent (CLI First)
 
-CLI-first scaffold for an Agora documentation QA agent using LangChain, Chroma, and OpenAI.
+CLI-first scaffold for an Agora documentation QA agent using LangChain, Chroma, OpenAI, and a Web UI.
+
+## Deployment Plan
+
+- Web UI + EC2 deployment roadmap: `docs/WEB_UI_EC2_DEPLOY_PLAN.md`
+- EC2 deployment runbook: `docs/EC2_WEB_DEPLOYMENT.md`
 
 ## Prerequisites
 
@@ -20,7 +25,7 @@ Create `.env` (or update `.env.example`) and set:
 OPENAI_API_KEY=your_api_key
 OPENAI_CHAT_MODEL=choose your model
 OPENAI_EMBEDDING_MODEL=text-embedding-3-large
-DOCS_DIR=docs
+DOCS_DIR=doc
 CHROMA_PERSIST_DIR=data/chroma/agora_docs_v1
 CHROMA_COLLECTION=agora_docs_v1
 RETRIEVAL_TOP_K=8
@@ -30,6 +35,10 @@ RETRY_MAX_ATTEMPTS=3
 RETRY_BASE_SECONDS=0.8
 LOG_LEVEL=INFO
 LOG_FILE=logs/doc_agent.log
+WEB_HOST=0.0.0.0
+WEB_PORT=8000
+WEB_SESSION_WINDOW=20
+WEB_ADMIN_TOKEN=
 ```
 
 ## CLI Commands
@@ -43,6 +52,37 @@ doc-agent ask --q "How to join a channel on Android?" --platform android --produ
 doc-agent chat --platform android --product video-calling
 doc-agent eval --dataset eval/questions.jsonl --platform android --product video-calling
 doc-agent stats
+```
+
+## Web UI (Local)
+
+```bash
+doc-agent-web
+```
+
+Then open `http://localhost:8000`.
+
+UI behavior:
+
+- Single chat flow with only `Send` and `Reset Session` actions.
+- Keeps up to 20 rounds of conversation context per session.
+- Citations are rendered as clickable links and shown with each assistant reply.
+
+Main API endpoints:
+
+- `GET /api/health`
+- `POST /api/ask`
+- `POST /api/chat`
+- `POST /api/chat/reset`
+- `GET /docs/{path}` for opening cited markdown sources
+- `POST /api/admin/ingest` (requires `WEB_ADMIN_TOKEN`)
+
+## Docker (Local / Server)
+
+```bash
+docker compose build
+docker compose up -d
+docker compose logs -f
 ```
 
 `eval` expects JSONL lines like:
