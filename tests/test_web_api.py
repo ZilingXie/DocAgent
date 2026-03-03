@@ -5,7 +5,9 @@ from urllib.parse import quote
 from fastapi.testclient import TestClient
 
 from app.models import Citation, QAResult, RetrievedChunk
+from app.web.intent import OUT_OF_SCOPE_REPLY
 from app.web.main import create_app
+from app.qa.messages import INSUFFICIENT_EVIDENCE_REPLY
 
 
 def _fake_result(answer_text: str = "sample answer") -> QAResult:
@@ -30,6 +32,15 @@ def _fake_result(answer_text: str = "sample answer") -> QAResult:
     )
 
 
+def _insufficient_result() -> QAResult:
+    return QAResult(
+        answer_text=INSUFFICIENT_EVIDENCE_REPLY,
+        citations=[],
+        used_chunks=[],
+        latency_ms=45,
+    )
+
+
 class WebApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = TestClient(create_app())
@@ -37,7 +48,7 @@ class WebApiTests(unittest.TestCase):
     def test_index_page(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Start the conversation by sending a message.", response.text)
+        self.assertIn('id="chat-root"', response.text)
 
     def test_health(self) -> None:
         response = self.client.get("/api/health")
@@ -79,6 +90,49 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(second_body["session_id"], session_id)
         self.assertEqual(len(second_body["history"]), 4)
         self.assertIn("Conversation memory:", mock_answer.call_args_list[1].args[0])
+
+    @patch("app.web.main.run_answer")
+    def test_chat_out_of_scope_short_circuit(self, mock_answer) -> None:
+        response = self.client.post("/api/chat", json={"message": "How is the weather today?"})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["answer_text"], OUT_OF_SCOPE_REPLY)
+        self.assertEqual(body["citations"], [])
+        self.assertEqual(len(body["history"]), 2)
+        mock_answer.assert_not_called()
+
+    @patch("app.web.main.run_answer")
+    def test_ask_out_of_scope_short_circuit(self, mock_answer) -> None:
+        response = self.client.post("/api/ask", json={"question": "今天天气怎么样"})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["answer_text"], OUT_OF_SCOPE_REPLY)
+        self.assertEqual(body["citations"], [])
+        mock_answer.assert_not_called()
+
+    @patch("app.web.main.run_answer")
+    def test_ask_replace_insufficient_reply_for_unrelated_question(self, mock_answer) -> None:
+        mock_answer.return_value = _insufficient_result()
+        response = self.client.post("/api/ask", json={"question": "Tell me a joke"})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["answer_text"], OUT_OF_SCOPE_REPLY)
+        self.assertEqual(body["citations"], [])
+
+    @patch("app.web.main.run_answer")
+    def test_chat_keep_insufficient_for_follow_up_question(self, mock_answer) -> None:
+        mock_answer.side_effect = [_fake_result("chat answer"), _insufficient_result()]
+        first = self.client.post("/api/chat", json={"message": "How to join channel with Agora?"})
+        self.assertEqual(first.status_code, 200)
+        session_id = first.json()["session_id"]
+
+        second = self.client.post(
+            "/api/chat",
+            json={"message": "What about that?", "session_id": session_id},
+        )
+        self.assertEqual(second.status_code, 200)
+        body = second.json()
+        self.assertEqual(body["answer_text"], INSUFFICIENT_EVIDENCE_REPLY)
 
     def test_docs_file_and_path_safety(self) -> None:
         source_file = "video-calling_overview.md"

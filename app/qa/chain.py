@@ -9,6 +9,7 @@ from langchain_openai import ChatOpenAI
 
 from app.config import get_openai_api_key_value, get_settings
 from app.models import QAResult, RetrievedChunk
+from app.qa.messages import INSUFFICIENT_EVIDENCE_REPLY
 from app.qa.prompt import SYSTEM_PROMPT, build_answer_prompt
 from app.retrieval.multi_query import generate_query_variants
 from app.retrieval.rerank import rerank
@@ -70,7 +71,7 @@ def _is_valid_response(payload: dict[str, Any], allowed_chunk_ids: set[str]) -> 
 
 def _fallback_no_evidence(latency_ms: int) -> QAResult:
     return QAResult(
-        answer_text="Not enough evidence in provided docs.",
+        answer_text=INSUFFICIENT_EVIDENCE_REPLY,
         citations=[],
         used_chunks=[],
         latency_ms=latency_ms,

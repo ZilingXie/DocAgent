@@ -84,13 +84,13 @@ function dedupeCitations(citations) {
 function TypingBubble() {
   return (
     <div className="flex justify-start">
-      <div className="max-w-[78%] rounded-3xl bg-slate-100 px-5 py-3 text-slate-600">
+      <div className="max-w-[70%] rounded-2xl border border-sky-100/80 bg-white px-4 py-2.5 text-slate-600 shadow-[0_8px_20px_rgba(14,165,233,0.08)]">
         <div className="inline-flex items-center gap-2">
           <span className="text-sm font-medium">Thinking</span>
           <span className="inline-flex items-center gap-1">
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.2s]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.1s]" />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-sky-400 [animation-delay:-0.2s]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-sky-400 [animation-delay:-0.1s]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-sky-400" />
           </span>
         </div>
       </div>
@@ -108,8 +108,8 @@ function MessageItem({ turn, meta, index }) {
         <div
           className={
             isUser
-              ? "rounded-3xl bg-blue-700 px-5 py-3 text-white shadow-sm"
-              : "rounded-3xl bg-slate-100 px-5 py-3 text-slate-800 shadow-sm"
+              ? "rounded-3xl bg-gradient-to-br from-sky-500 to-sky-600 px-5 py-3 text-white shadow-[0_10px_24px_rgba(2,132,199,0.28)]"
+              : "rounded-3xl border border-sky-100/90 bg-white px-5 py-3 text-slate-800 shadow-[0_8px_22px_rgba(2,132,199,0.08)]"
           }
         >
           <p className="m-0 whitespace-pre-wrap break-words text-[15px] leading-7">
@@ -117,7 +117,7 @@ function MessageItem({ turn, meta, index }) {
           </p>
 
           {!isUser && citations.length > 0 && (
-            <div className="mt-4 border-t border-slate-300/70 pt-3">
+            <div className="mt-4 border-t border-sky-100 pt-3">
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 References
               </p>
@@ -129,7 +129,7 @@ function MessageItem({ turn, meta, index }) {
                     target="_blank"
                     rel="noopener noreferrer"
                     title={`${item.source_path || ""}\n${item.heading || ""}`.trim()}
-                    className="rounded-full border border-slate-300 bg-white/90 px-3 py-1 font-mono text-[11px] text-slate-600 transition hover:border-blue-300 hover:text-blue-700"
+                    className="rounded-full border border-sky-200 bg-white px-3 py-1 font-mono text-[11px] text-slate-600 transition hover:border-sky-400 hover:text-sky-700"
                   >
                     {formatReferenceLabel(item, refIdx + 1)}
                   </a>
@@ -151,7 +151,6 @@ function MessageItem({ turn, meta, index }) {
 
 function ChatApp() {
   const [sessionId, setSessionId] = useState(null);
-  const [status, setStatus] = useState("Ready");
   const [input, setInput] = useState("");
   const [history, setHistory] = useState([]);
   const [assistantMetaHistory, setAssistantMetaHistory] = useState([]);
@@ -212,7 +211,6 @@ function ChatApp() {
     setHistory(optimisticHistory);
     setInput("");
     setSending(true);
-    setStatus("Thinking...");
 
     try {
       const data = await callApi("/api/chat", {
@@ -228,7 +226,6 @@ function ChatApp() {
           latency_ms: data.latency_ms,
         })
       );
-      setStatus("Ready");
     } catch (err) {
       const failHistory = [
         ...optimisticHistory,
@@ -236,7 +233,6 @@ function ChatApp() {
       ];
       setHistory(failHistory);
       setAssistantMetaHistory(alignAssistantMeta(failHistory, null));
-      setStatus(`Error`);
     } finally {
       setSending(false);
     }
@@ -246,7 +242,6 @@ function ChatApp() {
     if (sending) {
       return;
     }
-    setStatus("Resetting...");
 
     try {
       if (sessionId) {
@@ -255,82 +250,89 @@ function ChatApp() {
       setSessionId(null);
       setHistory([]);
       setAssistantMetaHistory([]);
-      setStatus("Ready");
-    } catch (err) {
-      setStatus("Error");
-    }
+    } catch {}
   }
 
   let assistantIndex = 0;
+  const showLanding = history.length === 0 && !sending;
+
+  const composer = (
+    <form
+      onSubmit={sendMessage}
+      className={
+        showLanding
+          ? "mx-auto w-full max-w-2xl"
+          : "bg-transparent px-5 pb-6 pt-3 md:px-8 md:pb-7"
+      }
+    >
+      <div className="flex items-center gap-3 rounded-[30px] border border-sky-200/90 bg-white/95 px-3 py-2 shadow-[0_16px_40px_rgba(14,165,233,0.16)] backdrop-blur">
+        <input
+          type="text"
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder="Ask Anything About Agora Product"
+          className="h-11 flex-1 rounded-full bg-transparent px-3 text-[15px] text-slate-800 outline-none placeholder:text-slate-400"
+        />
+        <button
+          type="submit"
+          disabled={sending}
+          className="min-w-[84px] rounded-full bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Send
+        </button>
+      </div>
+    </form>
+  );
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 font-sans md:p-10">
-      <div className="mx-auto flex h-[86vh] w-full max-w-5xl flex-col rounded-[32px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
-        <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-8 py-6">
-          <div>
-            <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-slate-400">
-              DocAgent
-            </p>
-            <h1 className="m-0 text-2xl font-semibold text-slate-800">Modern Chat</h1>
-            <p className="mt-2 text-sm text-slate-500">
-              Ask questions and open references directly on Agora docs.
-            </p>
-          </div>
-
-          <div className="flex flex-col items-end gap-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500">
-              <span className="font-medium text-slate-400">Status</span>
-              <span className="font-mono text-slate-700">{status}</span>
+    <div className="h-screen w-screen bg-gradient-to-b from-sky-100/60 via-sky-50 to-white font-sans">
+      <div className="flex h-full w-full overflow-hidden bg-white/90 backdrop-blur">
+        <div className="flex min-w-0 flex-1 flex-col bg-gradient-to-b from-sky-50/60 via-white to-white">
+          <header className="flex items-center justify-between gap-3 border-b border-sky-100/80 bg-white/70 px-5 py-4 backdrop-blur md:px-8">
+            <div>
+              <h1 className="m-0 text-lg font-semibold text-slate-800 md:text-2xl">
+                Agora Document Agent
+              </h1>
             </div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500">
-              <span className="font-medium text-slate-400">Session</span>
-              <span className="font-mono text-slate-700">{sessionId || "-"}</span>
-            </div>
-            <button
-              type="button"
-              onClick={resetSession}
-              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-400 hover:bg-slate-50"
-            >
-              Reset Session
-            </button>
-          </div>
-        </header>
 
-        <section ref={listRef} className="flex-1 space-y-4 overflow-y-auto px-8 py-6">
-          {history.length === 0 && !sending && (
-            <div className="flex h-full items-center justify-center">
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-8 py-10 text-center text-slate-500">
-                Start the conversation by sending a message.
+            <div className="flex items-center gap-2">
+              <div className="hidden items-center gap-2 rounded-full border border-sky-200 bg-white px-3 py-1 text-xs text-slate-500 sm:inline-flex">
+                <span className="font-medium text-slate-400">Session</span>
+                <span className="font-mono text-slate-700">{sessionId || "-"}</span>
               </div>
+              <button
+                type="button"
+                onClick={resetSession}
+                className="rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-sky-300 hover:text-sky-700"
+              >
+                Reset Session
+              </button>
             </div>
+          </header>
+
+          {showLanding ? (
+            <section className="flex flex-1 flex-col items-center justify-center px-6">
+              <h2 className="mb-8 text-center text-4xl font-semibold tracking-tight text-slate-800 md:text-5xl">
+                What can I help with?
+              </h2>
+              {composer}
+            </section>
+          ) : (
+            <>
+            <section ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-5 py-4 md:px-8 md:py-5">
+                {history.map((turn, idx) => {
+                  const meta =
+                    turn.role === "assistant" ? assistantMetaHistory[assistantIndex++] : null;
+                  return (
+                    <MessageItem key={`${turn.role}-${idx}`} turn={turn} meta={meta} index={idx} />
+                  );
+                })}
+                {sending && <TypingBubble />}
+              </section>
+              {composer}
+            </>
           )}
-
-          {history.map((turn, idx) => {
-            const meta = turn.role === "assistant" ? assistantMetaHistory[assistantIndex++] : null;
-            return <MessageItem key={`${turn.role}-${idx}`} turn={turn} meta={meta} index={idx} />;
-          })}
-
-          {sending && <TypingBubble />}
-        </section>
-
-        <form onSubmit={sendMessage} className="border-t border-slate-100 px-8 py-5">
-          <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder="Message DocAgent..."
-              className="h-11 flex-1 rounded-full bg-transparent px-3 text-[15px] text-slate-800 outline-none placeholder:text-slate-400"
-            />
-            <button
-              type="submit"
-              disabled={sending}
-              className="rounded-full bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Send
-            </button>
-          </div>
-        </form>
+        </div>
       </div>
     </div>
   );
