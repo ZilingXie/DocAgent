@@ -12,6 +12,11 @@ from app.config import get_openai_api_key_value, get_settings
 from app.ingest.indexer import build_index
 from app.logging_utils import setup_logging
 from app.qa.chain import answer as run_answer
+from app.web.intent import (
+    OUT_OF_SCOPE_REPLY,
+    is_obviously_out_of_scope,
+    should_replace_insufficient_reply,
+)
 from app.web.schemas import (
     AdminIngestRequest,
     AdminIngestResponse,
@@ -167,6 +172,8 @@ def create_app() -> FastAPI:
         question = payload.question.strip()
         if not question:
             raise HTTPException(status_code=422, detail="Question must not be empty.")
+        if is_obviously_out_of_scope(question):
+            return AskResponse(answer_text=OUT_OF_SCOPE_REPLY, citations=[], latency_ms=0)
 
         try:
             result = run_answer(
@@ -178,6 +185,15 @@ def create_app() -> FastAPI:
             logger.exception("ask endpoint failed")
             raise HTTPException(
                 status_code=500, detail="Failed to answer request. Check server logs."
+            )
+
+        if should_replace_insufficient_reply(
+            question=question, answer_text=result.answer_text, has_history=False
+        ):
+            return AskResponse(
+                answer_text=OUT_OF_SCOPE_REPLY,
+                citations=[],
+                latency_ms=result.latency_ms,
             )
 
         return AskResponse(
@@ -195,6 +211,18 @@ def create_app() -> FastAPI:
         session_store: InMemorySessionStore = request.app.state.session_store
         session_id = session_store.get_or_create(payload.session_id)
         history = session_store.history(session_id)
+
+        if is_obviously_out_of_scope(message):
+            session_store.append(session_id, "user", message)
+            session_store.append(session_id, "assistant", OUT_OF_SCOPE_REPLY)
+            return ChatResponse(
+                session_id=session_id,
+                answer_text=OUT_OF_SCOPE_REPLY,
+                citations=[],
+                latency_ms=0,
+                history=session_store.history(session_id),
+            )
+
         query = _build_chat_query(message=message, history=history)
 
         try:
@@ -209,14 +237,24 @@ def create_app() -> FastAPI:
                 status_code=500, detail="Failed to answer request. Check server logs."
             )
 
+        answer_text = result.answer_text
+        citations = _to_citations(result)
+        if should_replace_insufficient_reply(
+            question=message,
+            answer_text=result.answer_text,
+            has_history=bool(history),
+        ):
+            answer_text = OUT_OF_SCOPE_REPLY
+            citations = []
+
         session_store.append(session_id, "user", message)
-        session_store.append(session_id, "assistant", result.answer_text)
+        session_store.append(session_id, "assistant", answer_text)
         new_history = session_store.history(session_id)
 
         return ChatResponse(
             session_id=session_id,
-            answer_text=result.answer_text,
-            citations=_to_citations(result),
+            answer_text=answer_text,
+            citations=citations,
             latency_ms=result.latency_ms,
             history=new_history,
         )

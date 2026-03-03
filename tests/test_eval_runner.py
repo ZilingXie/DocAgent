@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.eval.runner import load_questions, run_evaluation
 from app.models import Citation, QAResult, RetrievedChunk
+from app.qa.messages import INSUFFICIENT_EVIDENCE_REPLY
 
 
 class EvalRunnerTests(unittest.TestCase):
@@ -31,7 +32,7 @@ class EvalRunnerTests(unittest.TestCase):
         responses = {
             "q1": QAResult(answer_text="a1", citations=citations, used_chunks=chunks, latency_ms=100),
             "q2": QAResult(
-                answer_text="Not enough evidence in provided docs.",
+                answer_text=INSUFFICIENT_EVIDENCE_REPLY,
                 citations=[],
                 used_chunks=[],
                 latency_ms=120,
@@ -66,4 +67,3 @@ class EvalRunnerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

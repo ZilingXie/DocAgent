@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Callable
 
 from app.models import QAResult
+from app.qa.messages import INSUFFICIENT_EVIDENCE_REPLY
 
 
 @dataclass
@@ -90,7 +91,7 @@ def run_evaluation(
         if result.citations:
             with_citations += 1
 
-        if result.answer_text.strip() == "Not enough evidence in provided docs.":
+        if result.answer_text.strip() == INSUFFICIENT_EVIDENCE_REPLY:
             insufficient += 1
         else:
             answered += 1
