@@ -2,12 +2,11 @@ import json
 import logging
 import re
 import time
-from pathlib import Path
 from typing import Any
 
 from langchain_openai import ChatOpenAI
 
-from app.config import get_openai_api_key_value, get_settings
+from app.config import get_openai_api_key_value, get_pgvector_dsn_value, get_settings
 from app.models import QAResult, RetrievedChunk
 from app.qa.messages import INSUFFICIENT_EVIDENCE_REPLY
 from app.qa.prompt import SYSTEM_PROMPT, build_answer_prompt
@@ -156,17 +155,18 @@ def answer(query: str, platform: str | None = None, product: str | None = None) 
         raise RuntimeError("OPENAI_API_KEY is not set.")
 
     variants = generate_query_variants(query=query, n=settings.query_variants)
+    postgres_dsn = get_pgvector_dsn_value()
+    if not postgres_dsn:
+        raise RuntimeError("PGVECTOR_DSN (or DATABASE_URL) is not set.")
     retrieved = retrieve(
         queries=variants,
         top_k=settings.retrieval_top_k,
-        persist_dir=Path(settings.chroma_persist_dir),
-        collection_name=settings.chroma_collection,
         embedding_model=settings.openai_embedding_model,
         api_key=api_key,
+        postgres_dsn=postgres_dsn,
+        postgres_table=settings.pgvector_table,
         platform=platform,
         product=product,
-        retry_max_attempts=settings.retry_max_attempts,
-        retry_base_seconds=settings.retry_base_seconds,
     )
     top_chunks = rerank(query=query, chunks=retrieved, top_n=settings.rerank_top_n)
     if not top_chunks:

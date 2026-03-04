@@ -59,7 +59,7 @@ Done when:
 - Add production `Dockerfile` and `.dockerignore`.
 - Add `docker-compose.yml` for local/prod-like run.
 - Persist:
-  - `data/chroma/*`
+  - PostgreSQL/pgvector data on managed database storage
   - `logs/*`
 - Ensure environment vars are loaded from `.env`.
 
@@ -94,7 +94,7 @@ Done when:
   - Request logs + error logs.
   - Optional CloudWatch agent in later iteration.
 - Backup and recovery:
-  - Snapshot/backup strategy for `data/chroma`.
+  - Snapshot/backup strategy for PostgreSQL database.
 
 Done when:
 - Service can be restarted/redeployed with repeatable steps.

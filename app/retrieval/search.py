@@ -1,16 +1,18 @@
 import hashlib
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
-from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
-
 from app.models import RetrievedChunk
-from app.utils.retry import run_with_retry
+from app.vector.postgres_store import similarity_search_with_score as pg_similarity_search
 
 logger = logging.getLogger(__name__)
+
+
+def _import_embeddings():
+    from langchain_openai import OpenAIEmbeddings
+
+    return OpenAIEmbeddings
 
 
 @dataclass
@@ -39,14 +41,12 @@ def build_metadata_filter(platform: Optional[str], product: Optional[str]) -> di
 def retrieve(
     queries: list[str],
     top_k: int,
-    persist_dir: Path,
-    collection_name: str,
     embedding_model: str,
     api_key: str | None,
+    postgres_dsn: str,
+    postgres_table: str = "docagent_chunks",
     platform: str | None = None,
     product: str | None = None,
-    retry_max_attempts: int = 3,
-    retry_base_seconds: float = 0.8,
 ) -> list[RetrievedChunk]:
     """
     Run multi-query vector retrieval and fuse results with Reciprocal Rank Fusion (RRF).
@@ -54,80 +54,51 @@ def retrieve(
     if not queries or top_k <= 0:
         return []
 
-    if not persist_dir.exists():
-        return []
-
+    OpenAIEmbeddings = _import_embeddings()
     embeddings = OpenAIEmbeddings(model=embedding_model, api_key=api_key)
-    vector_store = Chroma(
-        collection_name=collection_name,
-        persist_directory=str(persist_dir),
-        embedding_function=embeddings,
-    )
-    metadata_filter = build_metadata_filter(platform=platform, product=product)
 
     fused: dict[str, _FusionItem] = {}
     rrf_k = 60.0
-
-    for query in queries:
-        def _search():
-            return vector_store.similarity_search_with_score(
-                query, k=top_k, filter=metadata_filter
-            )
-
+    query_vectors = embeddings.embed_documents(queries)
+    for query, vector in zip(queries, query_vectors):
         try:
-            results = run_with_retry(
-                fn=_search,
-                max_attempts=retry_max_attempts,
-                base_delay_seconds=retry_base_seconds,
-                operation_name="chroma_similarity_search",
+            results = pg_similarity_search(
+                dsn=postgres_dsn,
+                table=postgres_table,
+                query_embedding=vector,
+                top_k=top_k,
+                platform=platform,
+                product=product,
             )
         except Exception as exc:
-            logger.warning("Failed search variant '%s': %s", query, exc)
+            logger.warning("Failed postgres search variant '%s': %s", query, exc)
             continue
-        for rank, (doc, raw_score) in enumerate(results, start=1):
-            chunk_id = str(doc.metadata.get("chunk_id", "")).strip()
-            source_path = str(doc.metadata.get("source_path", ""))
-            if not chunk_id:
-                chunk_id = _normalize_chunk_id(source_path, doc.page_content)
 
-            if chunk_id not in fused:
-                fused[chunk_id] = _FusionItem(
-                    chunk=RetrievedChunk(
-                        chunk_id=chunk_id,
-                        text=doc.page_content,
-                        score=0.0,
-                        source_path=source_path,
-                        h1=str(doc.metadata.get("h1", "")),
-                        h2=str(doc.metadata.get("h2", "")),
-                        h3=str(doc.metadata.get("h3", "")),
-                        source_url=str(
-                            doc.metadata.get("source_url", "")
-                            or doc.metadata.get("exported_from", "")
-                        ).strip()
-                        or None,
-                    )
-                )
-
-            item = fused[chunk_id]
+        for rank, (chunk, similarity) in enumerate(results, start=1):
+            if not chunk.chunk_id:
+                chunk.chunk_id = _normalize_chunk_id(chunk.source_path, chunk.text)
+            if chunk.chunk_id not in fused:
+                fused[chunk.chunk_id] = _FusionItem(chunk=chunk)
+            item = fused[chunk.chunk_id]
             item.rrf_score += 1.0 / (rrf_k + rank)
-            item.best_similarity = max(item.best_similarity, -float(raw_score))
+            item.best_similarity = max(item.best_similarity, float(similarity))
 
     ranked = sorted(
         fused.values(),
         key=lambda item: (item.rrf_score, item.best_similarity),
         reverse=True,
     )
-
     merged: list[RetrievedChunk] = []
     for item in ranked:
         chunk = item.chunk
         chunk.score = item.rrf_score
         merged.append(chunk)
     logger.info(
-        "retrieve done: variants=%d top_k=%d results=%d filter=%s",
+        "retrieve done (postgres): variants=%d top_k=%d results=%d platform=%s product=%s",
         len(queries),
         top_k,
         len(merged),
-        metadata_filter or {},
+        platform or "",
+        product or "",
     )
     return merged

@@ -1,6 +1,6 @@
 # Doc Agent (CLI First)
 
-CLI-first scaffold for an Agora documentation QA agent using LangChain, Chroma, OpenAI, and a Web UI.
+CLI-first scaffold for an Agora documentation QA agent using LangChain, OpenAI, PostgreSQL/pgvector, and a Web UI.
 
 ## Deployment Plan
 
@@ -9,7 +9,7 @@ CLI-first scaffold for an Agora documentation QA agent using LangChain, Chroma, 
 
 ## Prerequisites
 
-- Python 3.10 - 3.13 (3.14 currently not supported by Chroma dependency stack)
+- Python 3.10 - 3.13
 - OpenAI API key
 
 ## Setup
@@ -26,8 +26,9 @@ OPENAI_API_KEY=your_api_key
 OPENAI_CHAT_MODEL=choose your model
 OPENAI_EMBEDDING_MODEL=text-embedding-3-large
 DOCS_DIR=doc
-CHROMA_PERSIST_DIR=data/chroma/agora_docs_v1
-CHROMA_COLLECTION=agora_docs_v1
+PGVECTOR_DSN=postgresql://user:password@your-rds-endpoint:5432/dbname?sslmode=require
+PGVECTOR_TABLE=docagent_chunks
+PGVECTOR_DIM=3072
 RETRIEVAL_TOP_K=8
 RERANK_TOP_N=6
 QUERY_VARIANTS=3
@@ -76,6 +77,39 @@ Main API endpoints:
 - `POST /api/chat/reset`
 - `GET /docs/{path}` for opening cited markdown sources
 - `POST /api/admin/ingest` (requires `WEB_ADMIN_TOKEN`)
+- `POST /api/admin/vectorize` (requires `WEB_ADMIN_TOKEN`)
+
+### Use AWS PostgreSQL (pgvector)
+
+Set these environment variables:
+
+```env
+PGVECTOR_DSN=postgresql://user:password@your-rds-endpoint:5432/dbname?sslmode=require
+PGVECTOR_TABLE=docagent_chunks
+PGVECTOR_DIM=3072
+```
+
+Then rebuild and re-ingest:
+
+```bash
+docker compose up -d --build
+docker compose exec -T docagent-web doc-agent ingest --docs-dir doc --incremental
+```
+
+Vectorize custom text by API:
+
+```bash
+curl -X POST "http://localhost:8000/api/admin/vectorize" \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Token: ${WEB_ADMIN_TOKEN}" \
+  -d '{
+    "text":"How to join a channel with Agora SDK on Android?",
+    "source_path":"api/manual",
+    "platform":"android",
+    "product":"video-calling",
+    "h1":"Manual Import"
+  }'
+```
 
 ## Docker (Local / Server)
 
@@ -113,7 +147,7 @@ python -m unittest discover -s tests -v
 
 ## Notes
 
-- `ingest` is implemented with markdown loading, front matter parsing, chunking, embedding, and Chroma persistence.
+- `ingest` is implemented with markdown loading, front matter parsing, chunking, embedding, and PostgreSQL/pgvector persistence.
 - `ingest` supports incremental update mode by document hash delta.
 - `ask/chat/eval` support metadata filtering (`platform`, `product`), multi-query retrieval, RRF fusion, rerank, and strict citation output.
 - Runtime includes retry strategy and file logging (`logs/doc_agent.log`).

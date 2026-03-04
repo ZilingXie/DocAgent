@@ -24,10 +24,9 @@ class Settings(BaseSettings):
     )
 
     docs_dir: Path = Field(default=Path("doc"), alias="DOCS_DIR")
-    chroma_persist_dir: Path = Field(
-        default=Path("data/chroma/agora_docs_v1"), alias="CHROMA_PERSIST_DIR"
-    )
-    chroma_collection: str = Field(default="agora_docs_v1", alias="CHROMA_COLLECTION")
+    pgvector_dsn: Optional[SecretStr] = Field(default=None, alias="PGVECTOR_DSN")
+    pgvector_table: str = Field(default="docagent_chunks", alias="PGVECTOR_TABLE")
+    pgvector_dim: int = Field(default=3072, alias="PGVECTOR_DIM")
 
     chunk_size: int = Field(default=900, alias="CHUNK_SIZE")
     chunk_overlap: int = Field(default=180, alias="CHUNK_OVERLAP")
@@ -55,3 +54,13 @@ def get_openai_api_key_value() -> str | None:
         return None
     value = settings.openai_api_key.get_secret_value().strip()
     return value or None
+
+
+def get_pgvector_dsn_value() -> str | None:
+    settings = get_settings()
+    if settings.pgvector_dsn:
+        value = settings.pgvector_dsn.get_secret_value().strip()
+        if value:
+            return value
+    fallback = os.getenv("DATABASE_URL", "").strip()
+    return fallback or None

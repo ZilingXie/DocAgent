@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.config import get_openai_api_key_value, get_settings
+from app.config import get_openai_api_key_value, get_pgvector_dsn_value, get_settings
 from app.ingest.indexer import build_index
 from app.logging_utils import setup_logging
 from app.qa.chain import answer as run_answer
@@ -20,6 +20,8 @@ from app.web.intent import (
 from app.web.schemas import (
     AdminIngestRequest,
     AdminIngestResponse,
+    AdminVectorizeTextRequest,
+    AdminVectorizeTextResponse,
     AskRequest,
     AskResponse,
     ChatRequest,
@@ -29,10 +31,22 @@ from app.web.schemas import (
     HealthResponse,
 )
 from app.web.session_store import InMemorySessionStore
+from app.vector.postgres_store import (
+    ensure_vector_table,
+    ping_database,
+    table_exists as pg_table_exists,
+    upsert_text,
+)
 
 logger = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(ROOT_DIR / "templates"))
+
+
+def _import_embeddings():
+    from langchain_openai import OpenAIEmbeddings
+
+    return OpenAIEmbeddings
 
 
 def _clean_optional(value: str | None) -> str | None:
@@ -156,15 +170,23 @@ def create_app() -> FastAPI:
     def health() -> HealthResponse:
         current = get_settings()
         api_key_set = bool(get_openai_api_key_value())
-        chroma_dir = Path(current.chroma_persist_dir)
-        chroma_exists = chroma_dir.exists()
-        status = "ok" if api_key_set and chroma_exists else "degraded"
+        dsn = get_pgvector_dsn_value()
+        vector_store_ready = False
+        if dsn:
+            try:
+                vector_store_ready = ping_database(dsn=dsn) and pg_table_exists(
+                    dsn=dsn,
+                    table=current.pgvector_table,
+                )
+            except Exception:
+                vector_store_ready = False
+
+        status = "ok" if api_key_set and vector_store_ready else "degraded"
         return HealthResponse(
             status=status,
             api_key_set=api_key_set,
-            chroma_collection=current.chroma_collection,
-            chroma_persist_dir=str(chroma_dir),
-            chroma_exists=chroma_exists,
+            vector_store_ready=vector_store_ready,
+            pgvector_table=current.pgvector_table,
         )
 
     @app.post("/api/ask", response_model=AskResponse)
@@ -279,16 +301,23 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=400, detail=f"Docs directory not found: {docs_dir}"
             )
+        dsn = get_pgvector_dsn_value()
+        if not dsn:
+            raise HTTPException(
+                status_code=500,
+                detail="PGVECTOR_DSN (or DATABASE_URL) is not configured.",
+            )
 
         try:
             stats = build_index(
                 docs_dir=docs_dir,
-                collection_name=settings.chroma_collection,
-                persist_dir=Path(settings.chroma_persist_dir),
                 embedding_model=settings.openai_embedding_model,
                 api_key=get_openai_api_key_value(),
                 chunk_size=settings.chunk_size,
                 chunk_overlap=settings.chunk_overlap,
+                postgres_dsn=dsn,
+                postgres_table=settings.pgvector_table,
+                postgres_dim=settings.pgvector_dim,
                 reset=payload.reset,
                 incremental=payload.incremental,
                 retry_max_attempts=settings.retry_max_attempts,
@@ -306,6 +335,76 @@ def create_app() -> FastAPI:
             changed_docs=stats.changed_docs,
             removed_docs=stats.removed_docs,
             unchanged_docs=stats.unchanged_docs,
+        )
+
+    @app.post("/api/admin/vectorize", response_model=AdminVectorizeTextResponse)
+    def admin_vectorize_text(
+        payload: AdminVectorizeTextRequest,
+        x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    ) -> AdminVectorizeTextResponse:
+        _require_admin_token(x_admin_token)
+        settings = get_settings()
+        dsn = get_pgvector_dsn_value()
+        if not dsn:
+            raise HTTPException(
+                status_code=500,
+                detail="PGVECTOR_DSN (or DATABASE_URL) is not configured.",
+            )
+
+        text = payload.text.strip()
+        if not text:
+            raise HTTPException(status_code=422, detail="Text must not be empty.")
+
+        try:
+            api_key = get_openai_api_key_value()
+            if not api_key:
+                raise HTTPException(
+                    status_code=503,
+                    detail="OPENAI_API_KEY is not configured.",
+                )
+            ensure_vector_table(
+                dsn=dsn,
+                table=settings.pgvector_table,
+                vector_dim=settings.pgvector_dim,
+            )
+            OpenAIEmbeddings = _import_embeddings()
+            embeddings = OpenAIEmbeddings(
+                model=settings.openai_embedding_model,
+                api_key=api_key,
+            )
+            vector = embeddings.embed_query(text)
+            chunk_id, latency_ms = upsert_text(
+                dsn=dsn,
+                table=settings.pgvector_table,
+                vector_dim=settings.pgvector_dim,
+                text=text,
+                embedding=vector,
+                chunk_id=_clean_optional(payload.chunk_id),
+                doc_id=_clean_optional(payload.doc_id),
+                doc_hash=_clean_optional(payload.doc_hash),
+                source_path=_clean_optional(payload.source_path),
+                source_url=_clean_optional(payload.source_url),
+                platform=_clean_optional(payload.platform),
+                product=_clean_optional(payload.product),
+                h1=_clean_optional(payload.h1),
+                h2=_clean_optional(payload.h2),
+                h3=_clean_optional(payload.h3),
+                metadata=payload.metadata or {},
+            )
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("admin vectorize failed")
+            raise HTTPException(
+                status_code=500,
+                detail="Vectorize and store failed. Check server logs.",
+            )
+
+        return AdminVectorizeTextResponse(
+            status="ok",
+            chunk_id=chunk_id,
+            latency_ms=latency_ms,
+            table=settings.pgvector_table,
         )
 
     return app
