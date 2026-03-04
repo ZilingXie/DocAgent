@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from app.config import get_openai_api_key_value, get_settings
+from app.config import get_openai_api_key_value, get_pgvector_dsn_value, get_settings
 from app.eval.runner import load_questions, run_evaluation
 from app.logging_utils import setup_logging
 
@@ -36,13 +36,12 @@ def _configure_app() -> None:
 
 @app.command()
 def init() -> None:
-    """Initialize local directories for docs and vector store."""
+    """Initialize local directories for docs."""
     settings = get_settings()
     settings.docs_dir.mkdir(parents=True, exist_ok=True)
-    settings.chroma_persist_dir.mkdir(parents=True, exist_ok=True)
     console.print("[green]Initialized directories:[/green]")
     console.print(f"- docs: {settings.docs_dir}")
-    console.print(f"- chroma: {settings.chroma_persist_dir}")
+    console.print(f"- pgvector table: {settings.pgvector_table}")
     console.print("Tip: copy .env.example to .env and set OPENAI_API_KEY")
 
 
@@ -65,8 +64,9 @@ def config() -> None:
     table.add_row("OPENAI_CHAT_MODEL", settings.openai_chat_model)
     table.add_row("OPENAI_EMBEDDING_MODEL", settings.openai_embedding_model)
     table.add_row("DOCS_DIR", str(settings.docs_dir))
-    table.add_row("CHROMA_PERSIST_DIR", str(settings.chroma_persist_dir))
-    table.add_row("CHROMA_COLLECTION", settings.chroma_collection)
+    table.add_row("PGVECTOR_DSN", "yes" if get_pgvector_dsn_value() else "no")
+    table.add_row("PGVECTOR_TABLE", settings.pgvector_table)
+    table.add_row("PGVECTOR_DIM", str(settings.pgvector_dim))
     table.add_row("CHUNK_SIZE", str(settings.chunk_size))
     table.add_row("CHUNK_OVERLAP", str(settings.chunk_overlap))
     table.add_row("RETRIEVAL_TOP_K", str(settings.retrieval_top_k))
@@ -108,14 +108,20 @@ def ingest(
         console.print(f"[red]Docs directory not found: {target_dir}[/red]")
         raise typer.Exit(code=1)
 
+    postgres_dsn = get_pgvector_dsn_value()
+    if not postgres_dsn:
+        console.print("[red]PGVECTOR_DSN (or DATABASE_URL) is not set.[/red]")
+        raise typer.Exit(code=1)
+
     stats = build_index(
         docs_dir=target_dir,
-        collection_name=settings.chroma_collection,
-        persist_dir=settings.chroma_persist_dir,
         embedding_model=settings.openai_embedding_model,
         api_key=get_openai_api_key_value(),
         chunk_size=settings.chunk_size,
         chunk_overlap=settings.chunk_overlap,
+        postgres_dsn=postgres_dsn,
+        postgres_table=settings.pgvector_table,
+        postgres_dim=settings.pgvector_dim,
         reset=reset,
         incremental=incremental,
         retry_max_attempts=settings.retry_max_attempts,
@@ -264,27 +270,24 @@ def eval(
 
 @app.command()
 def stats() -> None:
-    """Show basic local repository stats for docs/index assets."""
+    """Show basic local repository stats for docs/pgvector assets."""
     settings = get_settings()
     resolved_docs_dir = _resolve_docs_dir(settings.docs_dir)
     md_count = _count_md_files(resolved_docs_dir)
-    chroma_exists = settings.chroma_persist_dir.exists()
-    vector_count = 0
-    if chroma_exists:
-        try:
-            import chromadb
-
-            client = chromadb.PersistentClient(path=str(settings.chroma_persist_dir))
-            collection = client.get_or_create_collection(settings.chroma_collection)
-            vector_count = collection.count()
-        except Exception:
-            vector_count = 0
     console.print(f"Docs directory: {resolved_docs_dir} (md files: {md_count})")
-    console.print(
-        f"Chroma persist dir: {settings.chroma_persist_dir} (exists: {'yes' if chroma_exists else 'no'})"
-    )
-    console.print(f"Collection: {settings.chroma_collection}")
-    console.print(f"Vector count: {vector_count}")
+    dsn = get_pgvector_dsn_value()
+    if not dsn:
+        console.print("[yellow]PGVECTOR_DSN is not configured.[/yellow]")
+        return
+    try:
+        from app.vector.postgres_store import vector_count as pg_vector_count
+
+        count = pg_vector_count(dsn=dsn, table=settings.pgvector_table)
+        console.print("Vector backend: postgres")
+        console.print(f"Table: {settings.pgvector_table}")
+        console.print(f"Vector count: {count}")
+    except Exception as exc:
+        console.print(f"[red]Failed to query pgvector stats:[/red] {exc}")
 
 
 if __name__ == "__main__":

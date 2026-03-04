@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 
-from app.config import get_openai_api_key_value, get_settings
+from app.config import get_openai_api_key_value, get_pgvector_dsn_value, get_settings
 from app.ingest.indexer import build_index
 
 
@@ -19,14 +19,18 @@ def main() -> None:
     docs_dir = Path(settings.docs_dir)
     if not docs_dir.exists() and Path("doc").exists():
         docs_dir = Path("doc")
+    postgres_dsn = get_pgvector_dsn_value()
+    if not postgres_dsn:
+        raise RuntimeError("PGVECTOR_DSN (or DATABASE_URL) is not set.")
     stats = build_index(
         docs_dir=docs_dir,
-        collection_name=settings.chroma_collection,
-        persist_dir=Path(settings.chroma_persist_dir),
         embedding_model=settings.openai_embedding_model,
         api_key=get_openai_api_key_value(),
         chunk_size=settings.chunk_size,
         chunk_overlap=settings.chunk_overlap,
+        postgres_dsn=postgres_dsn,
+        postgres_table=settings.pgvector_table,
+        postgres_dim=settings.pgvector_dim,
         reset=args.reset,
         incremental=not args.full,
         retry_max_attempts=settings.retry_max_attempts,

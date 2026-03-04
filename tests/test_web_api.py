@@ -2,12 +2,17 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import quote
 
-from fastapi.testclient import TestClient
+try:
+    from fastapi.testclient import TestClient
+except ModuleNotFoundError:  # pragma: no cover - local fallback when deps missing
+    TestClient = None
 
 from app.models import Citation, QAResult, RetrievedChunk
 from app.web.intent import OUT_OF_SCOPE_REPLY
-from app.web.main import create_app
 from app.qa.messages import INSUFFICIENT_EVIDENCE_REPLY
+
+if TestClient is not None:
+    from app.web.main import create_app
 
 
 def _fake_result(answer_text: str = "sample answer") -> QAResult:
@@ -41,6 +46,7 @@ def _insufficient_result() -> QAResult:
     )
 
 
+@unittest.skipIf(TestClient is None, "fastapi is not installed")
 class WebApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = TestClient(create_app())
@@ -55,7 +61,7 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertIn(payload["status"], {"ok", "degraded"})
-        self.assertIn("chroma_collection", payload)
+        self.assertIn("pgvector_table", payload)
 
     @patch("app.web.main.run_answer")
     def test_ask(self, mock_answer) -> None:

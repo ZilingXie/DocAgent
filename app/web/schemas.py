@@ -49,9 +49,8 @@ class ChatResetRequest(BaseModel):
 class HealthResponse(BaseModel):
     status: Literal["ok", "degraded"]
     api_key_set: bool
-    chroma_collection: str
-    chroma_persist_dir: str
-    chroma_exists: bool
+    vector_store_ready: bool
+    pgvector_table: str
 
 
 class AdminIngestRequest(BaseModel):
@@ -68,3 +67,25 @@ class AdminIngestResponse(BaseModel):
     changed_docs: int
     removed_docs: int
     unchanged_docs: int
+
+
+class AdminVectorizeTextRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=50000)
+    chunk_id: str | None = None
+    doc_id: str | None = None
+    doc_hash: str | None = None
+    source_path: str | None = None
+    source_url: str | None = None
+    platform: str | None = None
+    product: str | None = None
+    h1: str | None = None
+    h2: str | None = None
+    h3: str | None = None
+    metadata: dict[str, object] | None = None
+
+
+class AdminVectorizeTextResponse(BaseModel):
+    status: Literal["ok"]
+    chunk_id: str
+    latency_ms: int
+    table: str
